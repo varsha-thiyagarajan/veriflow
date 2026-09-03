@@ -1,21 +1,11 @@
+from urllib.parse import urlparse
+
 from .retriever import retrieve_evidence
 from .source_reliability import calculate_source_reliability
 from .source_metadata import SourceMetadata
 
 
-def run_phase2(
-    claims,
-    evidence_sources=None,
-    use_web=True,
-):
-    """
-    Run Phase 2 evidence retrieval.
-
-    Claims come from Phase 1.
-    Evidence can come from external web search
-    and/or local sources.
-    """
-
+def run_phase2(claims, evidence_sources=None, use_web=False):
     results = []
 
     for claim in claims:
@@ -31,19 +21,17 @@ def run_phase2(
         evidence_results = []
 
         for evidence in retrieved:
+            source = None
 
-            # Web results receive a reasonable baseline authority.
-            # Local sources can provide their own metadata.
             if evidence_sources:
                 source = next(
                     (
-                        s for s in evidence_sources
-                        if s["source_id"] == evidence["source_id"]
+                        item
+                        for item in evidence_sources
+                        if item["source_id"] == evidence["source_id"]
                     ),
-                    None
+                    None,
                 )
-            else:
-                source = None
 
             if source:
                 metadata = SourceMetadata(
@@ -56,14 +44,17 @@ def run_phase2(
                     domain=source.get("domain", ""),
                 )
             else:
+                url = evidence.get("url", "")
+                domain = urlparse(url).netloc.lower()
+
                 metadata = SourceMetadata(
                     source_id=evidence["source_id"],
                     title=evidence["title"],
-                    url=evidence.get("url"),
-                    authority_level=0.5,
+                    url=url,
+                    authority_level=0.0,
                     publication_date=None,
                     citation_count=0,
-                    domain="web",
+                    domain=domain,
                 )
 
             reliability = calculate_source_reliability(metadata)

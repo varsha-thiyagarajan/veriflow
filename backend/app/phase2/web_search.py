@@ -1,4 +1,6 @@
+from .source_reliability import get_domain_authority
 import os
+import re
 from typing import Any, Dict, List
 
 import requests
@@ -72,7 +74,6 @@ def fetch_page_text(url: str, timeout: int = 10) -> str:
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Remove elements that are usually not useful as evidence.
         for element in soup([
             "script",
             "style",
@@ -89,7 +90,6 @@ def fetch_page_text(url: str, timeout: int = 10) -> str:
             strip=True,
         )
 
-        # Prevent extremely large pages from entering NLI.
         return text[:12000]
 
     except requests.RequestException:
@@ -98,34 +98,152 @@ def fetch_page_text(url: str, timeout: int = 10) -> str:
         return ""
 
 
+def extract_relevant_passage(
+    page_text: str,
+    query: str,
+    max_sentences: int = 3,
+) -> str:
+    """
+    Select the most relevant sentences from a webpage
+    for the current claim.
+    """
+
+    if not page_text:
+        return ""
+
+    stop_words = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "to",
+        "of",
+        "in",
+        "on",
+        "for",
+        "and",
+        "or",
+        "with",
+        "has",
+        "have",
+        "can",
+        "be",
+        "this",
+        "that",
+        "it",
+        "as",
+        "by",
+        "from",
+        "does",
+    }
+
+    query_words = {
+        word
+        for word in re.findall(
+            r"\b[a-zA-Z0-9]+\b",
+            query.lower(),
+        )
+        if word not in stop_words
+    }
+
+    sentences = re.split(
+        r"(?<=[.!?])\s+",
+        page_text,
+    )
+
+    scored_sentences = []
+
+    for sentence in sentences:
+        sentence_words = {
+            word
+            for word in re.findall(
+                r"\b[a-zA-Z0-9]+\b",
+                sentence.lower(),
+            )
+            if word not in stop_words
+        }
+
+        overlap = query_words.intersection(sentence_words)
+
+        if overlap:
+            score = len(overlap)
+
+            scored_sentences.append(
+                (score, sentence.strip())
+            )
+
+    scored_sentences.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
+    selected = [
+        sentence
+        for _, sentence in scored_sentences[:max_sentences]
+        if sentence
+    ]
+
+    return " ".join(selected)
+
+
 def search_web_with_content(
     query: str,
     num_results: int = 5,
 ) -> List[Dict[str, Any]]:
     """
-    Search the web and enrich each result with page content.
-
-    Falls back to the search snippet when the page cannot
-    be fetched.
+    Search the web, enrich results with focused evidence,
+    and prioritize higher-authority domains.
     """
 
+    # Retrieve extra results so authoritative sources have
+    # a better chance of entering the final evidence set.
     search_results = search_web(
         query=query,
-        num_results=num_results,
+        num_results=max(num_results, 10),
     )
 
     enriched_results = []
 
     for result in search_results:
-        page_text = fetch_page_text(result["url"])
+        url = result.get("url", "")
 
-        evidence_text = page_text or result["snippet"]
+        domain = ""
+        if url:
+            from urllib.parse import urlparse
+            domain = urlparse(url).netloc.lower()
+
+        authority = get_domain_authority(domain)
+
+        page_text = fetch_page_text(url)
+
+        if page_text:
+            evidence_text = extract_relevant_passage(
+                page_text=page_text,
+                query=query,
+                max_sentences=3,
+            )
+        else:
+            evidence_text = result["snippet"]
+
+        if not evidence_text:
+            evidence_text = result["snippet"]
 
         enriched_results.append({
             "title": result["title"],
-            "url": result["url"],
+            "url": url,
+            "domain": domain,
+            "authority": authority,
             "snippet": result["snippet"],
             "text": evidence_text,
         })
 
-    return enriched_results
+    # Highest-authority sources first.
+    enriched_results.sort(
+        key=lambda item: item["authority"],
+        reverse=True,
+    )
+
+    return enriched_results[:num_results]

@@ -54,9 +54,7 @@ def run_text_verification(claims_with_evidence):
         ) / total_sources
 
         consensus_score = calculate_consensus_score(
-            agreeing_sources,
-            total_sources,
-            average_agreement_strength,
+           nli_results,
         )
 
         average_reliability = sum(
@@ -75,14 +73,23 @@ def run_text_verification(claims_with_evidence):
             consensus_score,
         )
 
-        contradiction_probability = max(
+        # Instead of letting one source dominate the verdict,
+        # consider the average support and contradiction across
+        # all retrieved sources.
+        average_entailment_probability = sum(
+            result["entailment_probability"]
+            for result in nli_results
+        ) / total_sources
+
+        average_contradiction_probability = sum(
             result["contradiction_probability"]
             for result in nli_results
-        )
+        ) / total_sources
 
         verdict = get_claim_verdict(
-            confidence,
-            contradiction_probability,
+            confidence=confidence,
+            contradiction_probability=average_contradiction_probability,
+            entailment_probability=average_entailment_probability,
         )
 
         results.append({
@@ -91,6 +98,14 @@ def run_text_verification(claims_with_evidence):
             "verdict": verdict,
             "confidence": confidence,
             "consensus_score": consensus_score,
+            "average_entailment_probability": round(
+                average_entailment_probability,
+                4,
+            ),
+            "average_contradiction_probability": round(
+                average_contradiction_probability,
+                4,
+            ),
             "nli_results": nli_results,
         })
 

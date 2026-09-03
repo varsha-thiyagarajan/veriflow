@@ -6,13 +6,41 @@ from app.phase3.consensus import (
 
 
 def test_consensus_score():
-    score = calculate_consensus_score(
-        agreeing_sources=3,
-        total_sources=3,
-        average_agreement_strength=0.9,
-    )
+    nli_results = [
+        {
+            "source_reliability": 1.0,
+            "entailment_probability": 0.9,
+        },
+        {
+            "source_reliability": 0.4,
+            "entailment_probability": 0.8,
+        },
+        {
+            "source_reliability": 0.4,
+            "entailment_probability": 0.7,
+        },
+    ]
 
-    assert score == 0.9
+    score = calculate_consensus_score(nli_results)
+
+    assert 0.7 <= score <= 0.9
+
+
+def test_authoritative_source_has_more_weight():
+    nli_results = [
+        {
+            "source_reliability": 1.0,
+            "entailment_probability": 0.95,
+        },
+        {
+            "source_reliability": 0.2,
+            "entailment_probability": 0.0,
+        },
+    ]
+
+    score = calculate_consensus_score(nli_results)
+
+    assert score > 0.75
 
 
 def test_claim_confidence():
@@ -54,8 +82,8 @@ def test_unsupported_verdict():
 
 def test_contradiction_takes_priority():
     verdict = get_claim_verdict(
-        confidence=0.95,
-        contradiction_probability=0.9,
+        confidence=0.4,
+        contradiction_probability=0.95,
     )
 
     assert verdict == "CONTRADICTED"

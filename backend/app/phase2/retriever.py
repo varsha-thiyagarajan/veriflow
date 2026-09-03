@@ -6,33 +6,18 @@ from .web_search import search_web_with_content
 def retrieve_evidence(
     claim_text: str,
     evidence_sources: List[Dict[str, Any]] | None = None,
-    use_web: bool = True,
+    use_web: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve evidence for a claim.
 
-    External web retrieval is the primary path.
-    Local evidence is optional for deterministic testing.
+    Local evidence can be used for deterministic testing.
+    External web retrieval is enabled explicitly with use_web=True.
     """
 
     results = []
 
-    if use_web:
-        web_results = search_web_with_content(
-            query=claim_text,
-            num_results=5,
-        )
-
-        for index, source in enumerate(web_results, start=1):
-            results.append({
-                "source_id": f"WEB-{index:03d}",
-                "title": source["title"],
-                "url": source["url"],
-                "text": source["text"],
-                "snippet": source["snippet"],
-                "matched_words": [],
-            })
-
+    # Local evidence path
     if evidence_sources:
         claim_words = set(claim_text.lower().split())
 
@@ -50,5 +35,22 @@ def retrieve_evidence(
                     "text": evidence_text,
                     "matched_words": list(overlap),
                 })
+
+    # External web path
+    if use_web:
+        web_results = search_web_with_content(
+            query=claim_text,
+            num_results=5,
+        )
+
+        for index, source in enumerate(web_results, start=1):
+            results.append({
+                "source_id": f"WEB-{index:03d}",
+                "title": source["title"],
+                "url": source["url"],
+                "text": source["text"],
+                "snippet": source["snippet"],
+                "matched_words": [],
+            })
 
     return results
